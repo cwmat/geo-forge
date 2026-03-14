@@ -8,26 +8,7 @@ import { useUiStore } from "@/stores/ui-store";
 import { getFeatureBounds } from "@/utils/geo-utils";
 import { Maximize2 } from "lucide-react";
 
-const BASEMAP_STYLE = {
-  version: 8 as const,
-  sources: {
-    "osm-tiles": {
-      type: "raster" as const,
-      tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-      tileSize: 256,
-      attribution: "&copy; OpenStreetMap contributors",
-    },
-  },
-  layers: [
-    {
-      id: "osm-tiles",
-      type: "raster" as const,
-      source: "osm-tiles",
-      minzoom: 0,
-      maxzoom: 19,
-    },
-  ],
-};
+const BASEMAP_STYLE = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
 
 export function MapView() {
   const mapRef = useRef<MapRef>(null);
