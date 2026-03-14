@@ -128,7 +128,7 @@ async function convert(outputFormat: string, options: string[] = []) {
   try {
     const formatMap: Record<string, { flag: string; ext: string; mime: string }> = {
       geojson: { flag: "GeoJSON", ext: ".geojson", mime: "application/geo+json" },
-      shapefile: { flag: "ESRI Shapefile", ext: ".shp", mime: "application/x-shapefile" },
+      shapefile: { flag: "ESRI Shapefile", ext: ".zip", mime: "application/zip" },
       kml: { flag: "KML", ext: ".kml", mime: "application/vnd.google-earth.kml+xml" },
       geopackage: { flag: "GPKG", ext: ".gpkg", mime: "application/geopackage+sqlite3" },
       csv: { flag: "CSV", ext: ".csv", mime: "text/csv" },
@@ -140,13 +140,28 @@ async function convert(outputFormat: string, options: string[] = []) {
 
     const crsArgs = activeTargetCrs ? ["-t_srs", activeTargetCrs] : [];
     const output = await Gdal.ogr2ogr(currentDataset, ["-f", fmt.flag, ...crsArgs, ...options]);
-    const bytes = await Gdal.getFileBytes(output);
-    const filename = `export${fmt.ext}`;
 
-    post({
-      type: "CONVERTED",
-      payload: { arrayBuffer: bytes.buffer, filename, mimeType: fmt.mime },
-    });
+    // Shapefile produces multiple sidecar files (.shp, .shx, .dbf, .prj) — bundle into ZIP
+    if (outputFormat === "shapefile" && output.all?.length > 1) {
+      const files: { name: string; data: Uint8Array }[] = [];
+      for (const entry of output.all) {
+        const bytes = await Gdal.getFileBytes(entry);
+        const name = entry.local?.split("/").pop() ?? entry.real?.split("/").pop() ?? "file";
+        files.push({ name, data: bytes });
+      }
+      const zipBuffer = buildZip(files);
+      post({
+        type: "CONVERTED",
+        payload: { arrayBuffer: zipBuffer, filename: "export.zip", mimeType: "application/zip" },
+      });
+    } else {
+      const bytes = await Gdal.getFileBytes(output);
+      const filename = `export${fmt.ext}`;
+      post({
+        type: "CONVERTED",
+        payload: { arrayBuffer: bytes.buffer, filename, mimeType: fmt.mime },
+      });
+    }
   } catch (err) {
     post({ type: "ERROR", payload: { message: (err as Error).message } });
   }
@@ -187,6 +202,97 @@ async function reproject(targetCrs: string) {
   } catch (err) {
     post({ type: "ERROR", payload: { message: (err as Error).message } });
   }
+}
+
+/** Build an uncompressed ZIP archive from a list of named byte arrays. */
+function buildZip(files: { name: string; data: Uint8Array }[]): ArrayBuffer {
+  const encoder = new TextEncoder();
+  const localHeaders: Uint8Array[] = [];
+  const centralHeaders: Uint8Array[] = [];
+  let offset = 0;
+
+  for (const file of files) {
+    const nameBytes = encoder.encode(file.name);
+    const crc = crc32(file.data);
+
+    // Local file header (30 bytes + name + data)
+    const local = new Uint8Array(30 + nameBytes.length + file.data.length);
+    const lv = new DataView(local.buffer);
+    lv.setUint32(0, 0x04034b50, true); // signature
+    lv.setUint16(4, 20, true); // version needed
+    lv.setUint16(6, 0, true); // flags
+    lv.setUint16(8, 0, true); // compression: STORE
+    lv.setUint16(10, 0, true); // mod time
+    lv.setUint16(12, 0, true); // mod date
+    lv.setUint32(14, crc, true);
+    lv.setUint32(18, file.data.length, true); // compressed size
+    lv.setUint32(22, file.data.length, true); // uncompressed size
+    lv.setUint16(26, nameBytes.length, true);
+    lv.setUint16(28, 0, true); // extra length
+    local.set(nameBytes, 30);
+    local.set(file.data, 30 + nameBytes.length);
+    localHeaders.push(local);
+
+    // Central directory header (46 bytes + name)
+    const central = new Uint8Array(46 + nameBytes.length);
+    const cv = new DataView(central.buffer);
+    cv.setUint32(0, 0x02014b50, true); // signature
+    cv.setUint16(4, 20, true); // version made by
+    cv.setUint16(6, 20, true); // version needed
+    cv.setUint16(8, 0, true); // flags
+    cv.setUint16(10, 0, true); // compression: STORE
+    cv.setUint16(12, 0, true); // mod time
+    cv.setUint16(14, 0, true); // mod date
+    cv.setUint32(16, crc, true);
+    cv.setUint32(20, file.data.length, true);
+    cv.setUint32(24, file.data.length, true);
+    cv.setUint16(28, nameBytes.length, true);
+    cv.setUint16(30, 0, true); // extra length
+    cv.setUint16(32, 0, true); // comment length
+    cv.setUint16(34, 0, true); // disk number
+    cv.setUint16(36, 0, true); // internal attrs
+    cv.setUint32(38, 0, true); // external attrs
+    cv.setUint32(42, offset, true); // local header offset
+    central.set(nameBytes, 46);
+    centralHeaders.push(central);
+
+    offset += local.length;
+  }
+
+  const centralSize = centralHeaders.reduce((s, c) => s + c.length, 0);
+
+  // End of central directory (22 bytes)
+  const eocd = new Uint8Array(22);
+  const ev = new DataView(eocd.buffer);
+  ev.setUint32(0, 0x06054b50, true); // signature
+  ev.setUint16(4, 0, true); // disk number
+  ev.setUint16(6, 0, true); // central dir disk
+  ev.setUint16(8, files.length, true);
+  ev.setUint16(10, files.length, true);
+  ev.setUint32(12, centralSize, true);
+  ev.setUint32(16, offset, true); // central dir offset
+  ev.setUint16(20, 0, true); // comment length
+
+  const totalSize = offset + centralSize + 22;
+  const result = new Uint8Array(totalSize);
+  let pos = 0;
+  for (const lh of localHeaders) { result.set(lh, pos); pos += lh.length; }
+  for (const ch of centralHeaders) { result.set(ch, pos); pos += ch.length; }
+  result.set(eocd, pos);
+
+  return result.buffer;
+}
+
+/** CRC-32 used by ZIP format. */
+function crc32(data: Uint8Array): number {
+  let crc = 0xffffffff;
+  for (let i = 0; i < data.length; i++) {
+    crc ^= data[i]!;
+    for (let j = 0; j < 8; j++) {
+      crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
