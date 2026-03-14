@@ -69,12 +69,12 @@ export function ExportPanel() {
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-3 gap-3">
+            <div className="flex flex-wrap justify-center gap-3">
               {OUTPUT_FORMATS.map((fmt) => (
                 <button
                   key={fmt.id}
                   onClick={() => handleExport(fmt.id)}
-                  className="flex flex-col items-center gap-2 rounded-lg border border-border bg-surface-0 p-4 transition-all hover:border-accent/50 hover:bg-surface-2"
+                  className="flex w-[calc(33.333%-0.5rem)] flex-col items-center gap-2 rounded-lg border border-border bg-surface-0 p-4 transition-all hover:border-accent/50 hover:bg-surface-2"
                 >
                   <span className="font-mono text-lg font-bold text-accent">
                     {FORMAT_ICONS[fmt.id]}

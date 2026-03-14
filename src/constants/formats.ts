@@ -17,6 +17,6 @@ export const OUTPUT_FORMATS = [
   { id: "shapefile", label: "Shapefile", extension: ".zip" },
   { id: "kml", label: "KML", extension: ".kml" },
   { id: "geopackage", label: "GeoPackage", extension: ".gpkg" },
-  { id: "csv", label: "CSV", extension: ".csv" },
+  // { id: "csv", label: "CSV", extension: ".csv" },
   { id: "flatgeobuf", label: "FlatGeobuf", extension: ".fgb" },
 ] as const;
