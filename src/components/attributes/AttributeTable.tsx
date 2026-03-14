@@ -108,7 +108,7 @@ export function AttributeTable() {
                       key={col}
                       className="max-w-[200px] truncate whitespace-nowrap border-b border-border/50 px-3 py-1"
                     >
-                      {row[col] != null ? String(row[col]) : ""}
+                      {(row as Record<string, unknown>)[col] != null ? String((row as Record<string, unknown>)[col]) : ""}
                     </td>
                   ))}
                 </tr>

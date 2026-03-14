@@ -1,5 +1,4 @@
 import type { GdalWorkerInbound, GdalWorkerOutbound } from "../types/worker-messages";
-// @ts-expect-error — gdal3.js types don't declare a proper default export
 import initGdalJs from "gdal3.js";
 
 /** Minimal Worker global scope — avoids adding "WebWorker" lib which conflicts with "DOM". */
