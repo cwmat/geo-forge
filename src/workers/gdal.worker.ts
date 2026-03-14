@@ -14,6 +14,8 @@ const ctx = self as unknown as WorkerScope;
 let Gdal: any = null;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let currentDataset: any = null;
+/** Tracks the active CRS after reprojection (e.g. "EPSG:3857"). null = source CRS. */
+let activeTargetCrs: string | null = null;
 
 function post(msg: GdalWorkerOutbound) {
   if (msg.type === "CONVERTED" && "arrayBuffer" in msg.payload) {
@@ -136,7 +138,8 @@ async function convert(outputFormat: string, options: string[] = []) {
     const fmt = formatMap[outputFormat];
     if (!fmt) throw new Error(`Unsupported output format: ${outputFormat}`);
 
-    const output = await Gdal.ogr2ogr(currentDataset, ["-f", fmt.flag, ...options]);
+    const crsArgs = activeTargetCrs ? ["-t_srs", activeTargetCrs] : [];
+    const output = await Gdal.ogr2ogr(currentDataset, ["-f", fmt.flag, ...crsArgs, ...options]);
     const bytes = await Gdal.getFileBytes(output);
     const filename = `export${fmt.ext}`;
 
@@ -156,21 +159,26 @@ async function reproject(targetCrs: string) {
   }
 
   try {
-    // Reproject the dataset and keep it as the new current dataset for future exports
-    const reprojected = await Gdal.ogr2ogr(currentDataset, ["-f", "GeoJSON", "-t_srs", targetCrs]);
-    currentDataset = reprojected;
+    activeTargetCrs = targetCrs;
 
-    // Extract CRS info from the reprojected dataset
-    const info = await Gdal.getInfo(reprojected);
-    const crs = extractCrsFromInfo(info) ?? {
+    // Build CRS info from the target CRS string
+    const epsgMatch = targetCrs.match(/(\d+)/);
+    const epsgCode = epsgMatch ? parseInt(epsgMatch[1]!, 10) : null;
+    const crsNames: Record<number, string> = {
+      4326: "WGS 84",
+      3857: "WGS 84 / Pseudo-Mercator",
+      4269: "NAD83",
+      4258: "ETRS89",
+    };
+    const crs = {
       wkt: "",
-      epsg: null,
+      epsg: epsgCode,
       proj4string: "",
-      name: targetCrs,
+      name: (epsgCode && crsNames[epsgCode]) || targetCrs,
     };
 
-    // Convert back to WGS 84 GeoJSON for MapLibre display (MapLibre only supports EPSG:4326)
-    const display = await Gdal.ogr2ogr(reprojected, ["-f", "GeoJSON", "-t_srs", "EPSG:4326"]);
+    // Convert from source to WGS 84 GeoJSON for MapLibre display
+    const display = await Gdal.ogr2ogr(currentDataset, ["-f", "GeoJSON", "-t_srs", "EPSG:4326"]);
     const bytes = await Gdal.getFileBytes(display);
     const text = new TextDecoder().decode(bytes);
     const geojson = JSON.parse(text);
@@ -223,6 +231,7 @@ ctx.onmessage = async (e: MessageEvent<GdalWorkerInbound>) => {
       break;
     case "CLOSE":
       currentDataset = null;
+      activeTargetCrs = null;
       break;
   }
 };
