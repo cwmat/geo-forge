@@ -38,6 +38,7 @@ interface GeoStore {
   requestFeatures: (layerName: string) => void;
   requestConvert: (outputFormat: string, options?: string[]) => void;
   requestReproject: (targetCrs: string) => void;
+  resetExportStatus: () => void;
 }
 
 let gdalWorker: Worker | null = null;
@@ -164,6 +165,8 @@ export const useGeoStore = create<GeoStore>()((set, get) => ({
     set({ parseStatus: "loading" });
     getGdalWorker().postMessage({ type: "REPROJECT", payload: { targetCrs } });
   },
+
+  resetExportStatus: () => set({ exportStatus: "idle" }),
 }));
 
 function handleWorkerMessage(

@@ -14,10 +14,15 @@ const FORMAT_ICONS: Record<string, string> = {
 };
 
 export function ExportPanel() {
-  const { requestConvert, exportStatus, loadedFile } = useGeoStore();
+  const { requestConvert, exportStatus, loadedFile, resetExportStatus } = useGeoStore();
   const { exportModalOpen, setExportModalOpen } = useUiStore();
 
   if (!exportModalOpen) return null;
+
+  const handleClose = () => {
+    setExportModalOpen(false);
+    resetExportStatus();
+  };
 
   const handleExport = (formatId: string) => {
     requestConvert(formatId);
@@ -36,7 +41,7 @@ export function ExportPanel() {
             )}
           </div>
           <button
-            onClick={() => setExportModalOpen(false)}
+            onClick={handleClose}
             className="text-text-muted transition-colors hover:text-text-primary"
           >
             <X className="h-4 w-4" />
@@ -57,7 +62,7 @@ export function ExportPanel() {
               </div>
               <p className="text-sm text-text-primary">Download started!</p>
               <button
-                onClick={() => setExportModalOpen(false)}
+                onClick={handleClose}
                 className="rounded bg-surface-2 px-3 py-1.5 text-xs text-text-secondary transition-colors hover:bg-surface-3"
               >
                 Close
