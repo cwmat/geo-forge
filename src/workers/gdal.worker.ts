@@ -139,34 +139,35 @@ async function convert(outputFormat: string, options: string[] = []) {
     if (!fmt) throw new Error(`Unsupported output format: ${outputFormat}`);
 
     const crsArgs = activeTargetCrs ? ["-t_srs", activeTargetCrs] : [];
-    const output = await Gdal.ogr2ogr(currentDataset, ["-f", fmt.flag, ...crsArgs, ...options]);
+    const output = await Gdal.ogr2ogr(currentDataset, ["-f", fmt.flag, ...crsArgs, ...options], "export");
 
-    // Multi-file formats: Shapefile (.shp/.shx/.dbf/.prj) → ZIP, CSV (directory output) → find .csv
-    if (output.all?.length > 1 && outputFormat === "shapefile") {
+    // For formats where the driver isn't in gdal3.js's internal map (e.g. CSV),
+    // the output path ends up as .unknown and getFileBytes returns empty.
+    // Fall back to getOutputFiles() to discover what GDAL actually wrote.
+    let bytes: Uint8Array = await Gdal.getFileBytes(output);
+
+    if (bytes.length === 0) {
+      const outputFiles = await Gdal.getOutputFiles();
+      const match = outputFiles.find((f: { path: string }) => f.path.endsWith(fmt.ext));
+      if (match) {
+        bytes = await Gdal.getFileBytes(match.path);
+      }
+    }
+
+    // Multi-file formats: Shapefile (.shp/.shx/.dbf/.prj) → ZIP
+    if (outputFormat === "shapefile" && output.all?.length > 1) {
       const files: { name: string; data: Uint8Array }[] = [];
       for (const entry of output.all) {
-        const bytes = await Gdal.getFileBytes(entry);
+        const fileBytes = await Gdal.getFileBytes(entry);
         const name = entry.local?.split("/").pop() ?? entry.real?.split("/").pop() ?? "file";
-        files.push({ name, data: bytes });
+        files.push({ name, data: fileBytes });
       }
       const zipBuffer = buildZip(files);
       post({
         type: "CONVERTED",
         payload: { arrayBuffer: zipBuffer, filename: "export.zip", mimeType: "application/zip" },
       });
-    } else if (output.all?.length >= 1) {
-      // Some drivers (CSV) output to a directory — pick the main file from .all
-      const mainEntry = output.all.find((e: { local?: string }) =>
-        e.local?.endsWith(fmt.ext),
-      ) ?? output.all[0];
-      const bytes = await Gdal.getFileBytes(mainEntry);
-      const filename = `export${fmt.ext}`;
-      post({
-        type: "CONVERTED",
-        payload: { arrayBuffer: bytes.buffer, filename, mimeType: fmt.mime },
-      });
     } else {
-      const bytes = await Gdal.getFileBytes(output);
       const filename = `export${fmt.ext}`;
       post({
         type: "CONVERTED",
