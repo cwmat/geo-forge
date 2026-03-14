@@ -156,11 +156,26 @@ async function reproject(targetCrs: string) {
   }
 
   try {
-    const output = await Gdal.ogr2ogr(currentDataset, ["-f", "GeoJSON", "-t_srs", targetCrs]);
-    const bytes = await Gdal.getFileBytes(output);
+    // Reproject the dataset and keep it as the new current dataset for future exports
+    const reprojected = await Gdal.ogr2ogr(currentDataset, ["-t_srs", targetCrs]);
+    currentDataset = reprojected;
+
+    // Extract CRS info from the reprojected dataset
+    const info = await Gdal.getInfo(reprojected);
+    const crs = extractCrsFromInfo(info) ?? {
+      wkt: "",
+      epsg: null,
+      proj4string: "",
+      name: targetCrs,
+    };
+
+    // Convert back to WGS 84 GeoJSON for MapLibre display (MapLibre only supports EPSG:4326)
+    const display = await Gdal.ogr2ogr(reprojected, ["-f", "GeoJSON", "-t_srs", "EPSG:4326"]);
+    const bytes = await Gdal.getFileBytes(display);
     const text = new TextDecoder().decode(bytes);
     const geojson = JSON.parse(text);
-    post({ type: "REPROJECTED", payload: { geojson } });
+
+    post({ type: "REPROJECTED", payload: { geojson, crs } });
   } catch (err) {
     post({ type: "ERROR", payload: { message: (err as Error).message } });
   }

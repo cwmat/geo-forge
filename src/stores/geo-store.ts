@@ -214,7 +214,7 @@ function handleWorkerMessage(
       break;
 
     case "REPROJECTED":
-      set({ features: data.payload.geojson, parseStatus: "ready" });
+      set({ features: data.payload.geojson, crsInfo: data.payload.crs, parseStatus: "ready" });
       break;
 
     case "CONVERTED": {

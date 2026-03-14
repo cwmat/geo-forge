@@ -19,6 +19,6 @@ export type GdalWorkerOutbound =
       type: "CONVERTED";
       payload: { arrayBuffer: ArrayBuffer; filename: string; mimeType: string };
     }
-  | { type: "REPROJECTED"; payload: { geojson: FeatureCollection } }
+  | { type: "REPROJECTED"; payload: { geojson: FeatureCollection; crs: CrsInfo } }
   | { type: "CRS_INFO"; payload: { crs: CrsInfo } }
   | { type: "ERROR"; payload: { message: string } };
