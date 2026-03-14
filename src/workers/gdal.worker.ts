@@ -141,8 +141,8 @@ async function convert(outputFormat: string, options: string[] = []) {
     const crsArgs = activeTargetCrs ? ["-t_srs", activeTargetCrs] : [];
     const output = await Gdal.ogr2ogr(currentDataset, ["-f", fmt.flag, ...crsArgs, ...options]);
 
-    // Shapefile produces multiple sidecar files (.shp, .shx, .dbf, .prj) — bundle into ZIP
-    if (outputFormat === "shapefile" && output.all?.length > 1) {
+    // Multi-file formats: Shapefile (.shp/.shx/.dbf/.prj) → ZIP, CSV (directory output) → find .csv
+    if (output.all?.length > 1 && outputFormat === "shapefile") {
       const files: { name: string; data: Uint8Array }[] = [];
       for (const entry of output.all) {
         const bytes = await Gdal.getFileBytes(entry);
@@ -153,6 +153,17 @@ async function convert(outputFormat: string, options: string[] = []) {
       post({
         type: "CONVERTED",
         payload: { arrayBuffer: zipBuffer, filename: "export.zip", mimeType: "application/zip" },
+      });
+    } else if (output.all?.length >= 1) {
+      // Some drivers (CSV) output to a directory — pick the main file from .all
+      const mainEntry = output.all.find((e: { local?: string }) =>
+        e.local?.endsWith(fmt.ext),
+      ) ?? output.all[0];
+      const bytes = await Gdal.getFileBytes(mainEntry);
+      const filename = `export${fmt.ext}`;
+      post({
+        type: "CONVERTED",
+        payload: { arrayBuffer: bytes.buffer, filename, mimeType: fmt.mime },
       });
     } else {
       const bytes = await Gdal.getFileBytes(output);
