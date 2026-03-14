@@ -157,7 +157,7 @@ async function reproject(targetCrs: string) {
 
   try {
     // Reproject the dataset and keep it as the new current dataset for future exports
-    const reprojected = await Gdal.ogr2ogr(currentDataset, ["-t_srs", targetCrs]);
+    const reprojected = await Gdal.ogr2ogr(currentDataset, ["-f", "GeoJSON", "-t_srs", targetCrs]);
     currentDataset = reprojected;
 
     // Extract CRS info from the reprojected dataset
