@@ -59,7 +59,16 @@ async function openFile(arrayBuffer: ArrayBuffer, filename: string) {
     currentDataset = dataset;
     const info = await Gdal.getInfo(dataset);
 
-    const crs = extractCrsFromInfo(info);
+    const isGeoJson = /\.(geojson|json)$/i.test(filename);
+    const crs = extractCrsFromInfo(info) ??
+      (isGeoJson
+        ? {
+            wkt: 'GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563]],PRIMEM["Greenwich",0],UNIT["degree",0.0174532925199433],AUTHORITY["EPSG","4326"]]',
+            epsg: 4326,
+            proj4string: "+proj=longlat +datum=WGS84 +no_defs",
+            name: "WGS 84",
+          }
+        : null);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const layers = (info.layers || []).map((l: any) => ({
       name: l.name || "default",
